@@ -1,5 +1,5 @@
 module Loadable exposing
-    ( Loadable(..), expectUpdate, fromResult
+    ( Loadable(..), expectUpdate, update
     , isLoading, isStale, hasValue, hasError
     , map, mapError, toValue, toError
     , FromGraphql, FromHttp
@@ -7,42 +7,7 @@ module Loadable exposing
 
 {-| This module helps you model values loaded, for example, from a database over Http/GraphQL.
 
-These three definitions are the bread and butter of the module:
-
-1.  Add a loadable to your model-definition.
-2.  Request some data, and update your loadable to expect it.
-3.  Receive a result, and transform it into a loadable, that then goes into your model.
-
-The next logical step is to model your views according to the model. For example with `mdgriffith/elm-ui`:
-
-```elm
-viewProductList : Loadable.FromHttp (List Product) -> Element Msg
-viewProductList products =
-    let
-        viewErrorAndRetry =
-             Loadable.toError products
-                |> Maybe.map (viewErrorAndRetryOverlay getProductsCmd)
-                |> Maybe.withDefault Element.none
-
-        viewLoading =
-            if Loadable.isLoading products then
-                viewLoadingIndicator
-            else
-                Element.none
-
-        productElements =
-             Loadable.toValue products
-                |> Maybe.map (List.indexedMap viewProductListItem)
-                |> Maybe.withDefault []
-    in
-    Element.column
-        [ Element.inFront viewErrorAndRetry,
-        , Element.inFront viewLoading
-        ]
-        productElements
-```
-
-@docs Loadable, expectUpdate, fromResult
+@docs Loadable, expectUpdate, update
 
 
 # Queries
@@ -102,16 +67,33 @@ expectUpdate loadable =
             loadable
 
 
-{-| Convert a result into a loadable. Use this when a new value arrives, and your loadable is expecting the update.
+{-| Update the loadable with a result. Use this when a new value arrives, and your loadable is expecting the update.
 -}
-fromResult : Result error value -> Loadable error value
-fromResult result =
+update : Result error value -> Loadable error value -> Loadable error value
+update result loadable =
     case result of
         Ok value ->
             Success value
 
         Err error ->
-            Failure error
+            case loadable of
+                Success value ->
+                    ReloadFailure error value
+
+                ReloadFailure _ stale ->
+                    ReloadFailure error stale
+
+                Reloading value ->
+                    ReloadFailure error value
+
+                Failure _ ->
+                    Failure error
+
+                Idle ->
+                    Failure error
+
+                Loading ->
+                    Failure error
 
 
 
